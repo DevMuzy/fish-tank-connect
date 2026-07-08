@@ -14,7 +14,128 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      clientes: {
+        Row: {
+          cpf: string | null
+          created_at: string
+          created_by: string | null
+          data_nascimento: string
+          endereco: string | null
+          id: string
+          nome: string
+          telefone: string
+          updated_at: string
+        }
+        Insert: {
+          cpf?: string | null
+          created_at?: string
+          created_by?: string | null
+          data_nascimento: string
+          endereco?: string | null
+          id?: string
+          nome: string
+          telefone: string
+          updated_at?: string
+        }
+        Update: {
+          cpf?: string | null
+          created_at?: string
+          created_by?: string | null
+          data_nascimento?: string
+          endereco?: string | null
+          id?: string
+          nome?: string
+          telefone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      historico_envios: {
+        Row: {
+          cliente_id: string | null
+          data_envio: string
+          id: string
+          mensagem_id: string | null
+          resposta_api: Json | null
+          status: string
+          telefone: string
+        }
+        Insert: {
+          cliente_id?: string | null
+          data_envio?: string
+          id?: string
+          mensagem_id?: string | null
+          resposta_api?: Json | null
+          status?: string
+          telefone: string
+        }
+        Update: {
+          cliente_id?: string | null
+          data_envio?: string
+          id?: string
+          mensagem_id?: string | null
+          resposta_api?: Json | null
+          status?: string
+          telefone?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "historico_envios_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "historico_envios_mensagem_id_fkey"
+            columns: ["mensagem_id"]
+            isOneToOne: false
+            referencedRelation: "mensagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mensagens: {
+        Row: {
+          cliente_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          mensagem: string
+          quantidade_destinatarios: number
+          status: string
+          tipo_envio: string
+        }
+        Insert: {
+          cliente_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          mensagem: string
+          quantidade_destinatarios?: number
+          status?: string
+          tipo_envio: string
+        }
+        Update: {
+          cliente_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          mensagem?: string
+          quantidade_destinatarios?: number
+          status?: string
+          tipo_envio?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mensagens_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
