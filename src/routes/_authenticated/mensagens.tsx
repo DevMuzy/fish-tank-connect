@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useServerFn } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn as tsrUseServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
