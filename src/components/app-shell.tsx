@@ -7,6 +7,7 @@ import {
   MessageSquareText,
   Cake,
   History,
+  Settings,
   LogOut,
   Menu,
   X,
@@ -22,6 +23,7 @@ const navItems = [
   { to: "/mensagens", label: "Disparo", icon: MessageSquareText },
   { to: "/aniversariantes", label: "Aniversariantes", icon: Cake },
   { to: "/historico", label: "Histórico", icon: History },
+  { to: "/configuracoes", label: "Configurações", icon: Settings },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
