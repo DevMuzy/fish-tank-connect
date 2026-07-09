@@ -371,6 +371,3 @@ function IntegracaoDialog({
     </Dialog>
   );
 }
-
-// Silence unused import warning when DialogTrigger is not used
-void DialogTrigger;
