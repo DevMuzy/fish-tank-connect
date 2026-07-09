@@ -52,6 +52,7 @@ export type Database = {
       }
       historico_envios: {
         Row: {
+          atualizado_em: string
           cliente_id: string | null
           data_envio: string
           id: string
@@ -59,8 +60,11 @@ export type Database = {
           resposta_api: Json | null
           status: string
           telefone: string
+          tentativas: number
+          ultimo_erro: string | null
         }
         Insert: {
+          atualizado_em?: string
           cliente_id?: string | null
           data_envio?: string
           id?: string
@@ -68,8 +72,11 @@ export type Database = {
           resposta_api?: Json | null
           status?: string
           telefone: string
+          tentativas?: number
+          ultimo_erro?: string | null
         }
         Update: {
+          atualizado_em?: string
           cliente_id?: string | null
           data_envio?: string
           id?: string
@@ -77,6 +84,8 @@ export type Database = {
           resposta_api?: Json | null
           status?: string
           telefone?: string
+          tentativas?: number
+          ultimo_erro?: string | null
         }
         Relationships: [
           {
@@ -95,35 +104,89 @@ export type Database = {
           },
         ]
       }
+      integracoes_whatsapp: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          nome: string
+          numero_remetente: string | null
+          observacoes: string | null
+          provedor: string
+          status_conexao: string
+          token: string | null
+          ultimo_check: string | null
+          updated_at: string
+          url_base: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          nome: string
+          numero_remetente?: string | null
+          observacoes?: string | null
+          provedor?: string
+          status_conexao?: string
+          token?: string | null
+          ultimo_check?: string | null
+          updated_at?: string
+          url_base?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          nome?: string
+          numero_remetente?: string | null
+          observacoes?: string | null
+          provedor?: string
+          status_conexao?: string
+          token?: string | null
+          ultimo_check?: string | null
+          updated_at?: string
+          url_base?: string | null
+        }
+        Relationships: []
+      }
       mensagens: {
         Row: {
           cliente_id: string | null
           created_at: string
           created_by: string | null
+          erros: number
           id: string
           mensagem: string
           quantidade_destinatarios: number
           status: string
+          sucesso: number
           tipo_envio: string
         }
         Insert: {
           cliente_id?: string | null
           created_at?: string
           created_by?: string | null
+          erros?: number
           id?: string
           mensagem: string
           quantidade_destinatarios?: number
           status?: string
+          sucesso?: number
           tipo_envio: string
         }
         Update: {
           cliente_id?: string | null
           created_at?: string
           created_by?: string | null
+          erros?: number
           id?: string
           mensagem?: string
           quantidade_destinatarios?: number
           status?: string
+          sucesso?: number
           tipo_envio?: string
         }
         Relationships: [
