@@ -227,9 +227,10 @@ function IntegracaoDialog({
   onOpenChange: (v: boolean) => void;
   initial: Integracao | null;
   onSaved: () => void;
-  salvarFn: ReturnType<typeof useServerFn<typeof salvarIntegracao>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  salvarFn: any;
 }) {
-  const [form, setForm] = useState(() => ({
+  const [form, setForm] = useState({
     nome: "",
     provedor: "mock" as "mock" | "evolution" | "zapi" | "meta",
     url_base: "",
@@ -237,22 +238,21 @@ function IntegracaoDialog({
     numero_remetente: "",
     ativo: false,
     observacoes: "",
-  }));
+  });
 
-  // reset quando abre
-  useState(() => {
-    if (initial) {
+  useEffect(() => {
+    if (open) {
       setForm({
-        nome: initial.nome,
-        provedor: initial.provedor as never,
-        url_base: initial.url_base ?? "",
-        token: initial.token ?? "",
-        numero_remetente: initial.numero_remetente ?? "",
-        ativo: initial.ativo,
-        observacoes: initial.observacoes ?? "",
+        nome: initial?.nome ?? "",
+        provedor: (initial?.provedor as never) ?? "mock",
+        url_base: initial?.url_base ?? "",
+        token: initial?.token ?? "",
+        numero_remetente: initial?.numero_remetente ?? "",
+        ativo: initial?.ativo ?? false,
+        observacoes: initial?.observacoes ?? "",
       });
     }
-  });
+  }, [open, initial]);
 
   const salvar = useMutation({
     mutationFn: async () =>
