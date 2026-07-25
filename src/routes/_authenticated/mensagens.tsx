@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn as tsrUseServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Sparkles, Send, Loader2 } from "lucide-react";
+import { Sparkles, Send, Loader2, Image as ImageIcon, X } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/app-shell";
@@ -50,6 +50,9 @@ function MensagensPage() {
   const [mensagem, setMensagem] = useState("");
   const [tipoModelo, setTipoModelo] = useState<(typeof modelos)[number]["tipo"]>("livre");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [imagemUrl, setImagemUrl] = useState<string | null>(null);
+  const [uploadingImagem, setUploadingImagem] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: clientes = [] } = useQuery({
     queryKey: ["clientes-simple"],
@@ -65,6 +68,33 @@ function MensagensPage() {
 
   const gerarIA = tsrUseServerFn(gerarMensagemIA);
   const enviarFn = tsrUseServerFn(enviarCampanha);
+
+  async function handleSelecionarImagem(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Selecione um arquivo de imagem.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Imagem muito grande (máximo 5MB).");
+      return;
+    }
+    setUploadingImagem(true);
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${crypto.randomUUID()}.${ext}`;
+      const { error } = await supabase.storage.from("campanhas").upload(path, file);
+      if (error) throw error;
+      const { data } = supabase.storage.from("campanhas").getPublicUrl(path);
+      setImagemUrl(data.publicUrl);
+    } catch (err) {
+      toast.error((err as Error).message || "Falha ao enviar imagem.");
+    } finally {
+      setUploadingImagem(false);
+    }
+  }
 
   const gerar = useMutation({
     mutationFn: async () => {
@@ -88,6 +118,7 @@ function MensagensPage() {
           mensagem: mensagem.trim(),
           tipo_envio: destino,
           cliente_id: destino === "individual" ? clienteId : null,
+          imagem_url: imagemUrl,
         },
       });
     },
@@ -98,6 +129,7 @@ function MensagensPage() {
       setConfirmOpen(false);
       setMensagem("");
       setIdeia("");
+      setImagemUrl(null);
     },
     onError: (e: Error) => {
       toast.error(e.message);
@@ -180,6 +212,53 @@ function MensagensPage() {
                 value={mensagem}
                 onChange={(e) => setMensagem(e.target.value)}
               />
+
+              <div className="space-y-2">
+                <Label>Foto (opcional)</Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleSelecionarImagem}
+                />
+                {imagemUrl ? (
+                  <div className="flex items-center gap-3 rounded-lg border p-2">
+                    <img
+                      src={imagemUrl}
+                      alt="Foto da campanha"
+                      className="h-16 w-16 rounded-md object-cover"
+                    />
+                    <div className="flex-1 text-xs text-muted-foreground">
+                      Anexada — vai junto com a mensagem para cada destinatário.
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setImagemUrl(null)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingImagem}
+                  >
+                    {uploadingImagem ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <ImageIcon className="h-4 w-4 mr-2" />
+                    )}
+                    {uploadingImagem ? "Enviando..." : "Anexar foto"}
+                  </Button>
+                )}
+              </div>
+
               <div className="flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">
                   {mensagem.length} caracteres
@@ -276,6 +355,13 @@ function MensagensPage() {
           <DialogHeader>
             <DialogTitle>Confirma o envio desta mensagem?</DialogTitle>
           </DialogHeader>
+          {imagemUrl && (
+            <img
+              src={imagemUrl}
+              alt="Foto da campanha"
+              className="h-32 w-full rounded-md object-cover"
+            />
+          )}
           <div className="rounded-md bg-muted p-4 text-sm whitespace-pre-wrap max-h-64 overflow-auto">
             {mensagem}
           </div>

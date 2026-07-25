@@ -1,8 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Fish } from "lucide-react";
 import { toast } from "sonner";
 
+import logoFull from "@/assets/logo-full.jpg";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Entrar — PeixariaCRM" },
+      { title: "Entrar — Vitória Mar Pescados" },
       { name: "description", content: "Acesse o painel de gestão da sua peixaria." },
       { name: "robots", content: "noindex" },
     ],
@@ -59,11 +59,9 @@ function AuthPage() {
     <div className="min-h-screen grid lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between p-12 bg-sidebar text-sidebar-foreground relative overflow-hidden">
         <div className="relative z-10 flex items-center gap-3">
-          <div className="h-11 w-11 rounded-xl bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground">
-            <Fish className="h-6 w-6" strokeWidth={2.4} />
-          </div>
+          <img src={logoFull} alt="Vitória Mar Pescados" className="h-20 w-20 rounded-2xl object-cover shadow-elevated" />
           <div>
-            <div className="font-bold text-lg tracking-tight">PeixariaCRM</div>
+            <div className="font-bold text-lg tracking-tight">Vitória Mar Pescados</div>
             <div className="text-xs text-sidebar-foreground/60">Gestão & Relacionamento</div>
           </div>
         </div>
@@ -86,7 +84,7 @@ function AuthPage() {
           className="absolute inset-0 opacity-40 pointer-events-none"
           style={{
             background:
-              "radial-gradient(1200px 500px at 20% 90%, oklch(0.72 0.14 195 / 0.35), transparent 60%), radial-gradient(800px 400px at 90% 10%, oklch(0.42 0.13 235 / 0.4), transparent 60%)",
+              "radial-gradient(1200px 500px at 20% 90%, oklch(0.74 0.13 229 / 0.35), transparent 60%), radial-gradient(800px 400px at 90% 10%, oklch(0.354 0.12 278 / 0.4), transparent 60%)",
           }}
         />
       </div>
@@ -94,10 +92,8 @@ function AuthPage() {
       <div className="flex items-center justify-center p-6 lg:p-12 bg-background">
         <div className="w-full max-w-md space-y-8">
           <div className="lg:hidden flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
-              <Fish className="h-5 w-5" />
-            </div>
-            <div className="font-bold text-lg">PeixariaCRM</div>
+            <img src={logoFull} alt="Vitória Mar Pescados" className="h-12 w-12 rounded-xl object-cover" />
+            <div className="font-bold text-lg">Vitória Mar Pescados</div>
           </div>
 
           <div>

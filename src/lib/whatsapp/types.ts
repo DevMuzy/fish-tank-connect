@@ -23,8 +23,22 @@ export type EnvioResultado = {
   error?: string;
 };
 
+export type QrCodeResultado = {
+  ok: boolean;
+  conectado?: boolean;
+  qrCodeBase64?: string;
+  error?: string;
+};
+
+export type SendParams = {
+  telefone: string;
+  mensagem: string;
+  imagemUrl?: string | null;
+};
+
 export interface WhatsAppProvider {
   name: string;
-  send(params: { telefone: string; mensagem: string }): Promise<EnvioResultado>;
+  send(params: SendParams): Promise<EnvioResultado>;
   healthCheck?(): Promise<{ ok: boolean; detail?: string }>;
+  getQrCode?(): Promise<QrCodeResultado>;
 }

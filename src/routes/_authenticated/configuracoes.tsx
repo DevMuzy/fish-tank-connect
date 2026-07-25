@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Plus, Radio, Trash2, Zap, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, Radio, Trash2, Zap, QrCode, CheckCircle2, AlertTriangle } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/app-shell";
@@ -27,7 +27,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { salvarIntegracao, excluirIntegracao, testarConexao } from "@/lib/integracoes.functions";
+import {
+  salvarIntegracao,
+  excluirIntegracao,
+  testarConexao,
+  gerarQrCode,
+} from "@/lib/integracoes.functions";
 
 export const Route = createFileRoute("/_authenticated/configuracoes")({
   component: ConfiguracoesPage,
@@ -57,6 +62,7 @@ function ConfiguracoesPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Integracao | null>(null);
+  const [qrIntegracao, setQrIntegracao] = useState<Integracao | null>(null);
 
   const { data: integracoes = [], isLoading } = useQuery({
     queryKey: ["integracoes"],
@@ -166,6 +172,11 @@ function ConfiguracoesPage() {
                 >
                   <Zap className="h-3.5 w-3.5 mr-1.5" /> Testar conexão
                 </Button>
+                {i.provedor === "evolution" && (
+                  <Button variant="outline" size="sm" onClick={() => setQrIntegracao(i)}>
+                    <QrCode className="h-3.5 w-3.5 mr-1.5" /> QR Code
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -195,7 +206,123 @@ function ConfiguracoesPage() {
         }}
         salvarFn={salvarFn}
       />
+
+      <QrCodeDialog
+        integracao={qrIntegracao}
+        onOpenChange={(v) => !v && setQrIntegracao(null)}
+        onConectado={() => qc.invalidateQueries({ queryKey: ["integracoes"] })}
+      />
     </div>
+  );
+}
+
+function QrCodeDialog({
+  integracao,
+  onOpenChange,
+  onConectado,
+}: {
+  integracao: Integracao | null;
+  onOpenChange: (open: boolean) => void;
+  onConectado: () => void;
+}) {
+  const qrFn = useServerFn(gerarQrCode);
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const [conectado, setConectado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const conectadoRef = useRef(false);
+
+  async function buscar(id: string) {
+    setLoading(true);
+    setErro(null);
+    try {
+      const r = await qrFn({ data: { id } });
+      if (!r.ok) {
+        setErro(r.error ?? "Falha ao gerar QR Code.");
+      } else if (r.conectado) {
+        conectadoRef.current = true;
+        setConectado(true);
+        setQrImage(null);
+        onConectado();
+      } else if (r.qrCodeBase64) {
+        setQrImage(r.qrCodeBase64.startsWith("data:") ? r.qrCodeBase64 : `data:image/png;base64,${r.qrCodeBase64}`);
+        setConectado(false);
+      } else {
+        setErro("Evolution não retornou QR Code.");
+      }
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!integracao) {
+      setQrImage(null);
+      setConectado(false);
+      setErro(null);
+      return;
+    }
+    conectadoRef.current = false;
+    setConectado(false);
+    buscar(integracao.id);
+    const interval = setInterval(() => {
+      if (!conectadoRef.current) buscar(integracao.id);
+    }, 6000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [integracao?.id]);
+
+  return (
+    <Dialog open={!!integracao} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Conectar WhatsApp — {integracao?.nome}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col items-center justify-center gap-4 py-4 min-h-[280px]">
+          {loading && !qrImage && (
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          )}
+          {!loading && conectado && (
+            <div className="flex flex-col items-center gap-2 text-center">
+              <CheckCircle2 className="h-10 w-10 text-success" />
+              <p className="font-medium">WhatsApp conectado!</p>
+              <p className="text-sm text-muted-foreground">
+                Essa instância já está pareada e pronta para enviar mensagens.
+              </p>
+            </div>
+          )}
+          {!loading && !conectado && erro && (
+            <div className="flex flex-col items-center gap-2 text-center">
+              <AlertTriangle className="h-8 w-8 text-destructive" />
+              <p className="text-sm text-destructive">{erro}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => integracao && buscar(integracao.id)}
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          )}
+          {!loading && !conectado && !erro && qrImage && (
+            <>
+              <img src={qrImage} alt="QR Code Evolution" className="h-56 w-56 rounded-lg border" />
+              <p className="text-xs text-muted-foreground text-center">
+                Abra o WhatsApp no celular → Aparelhos conectados → Conectar um aparelho, e
+                escaneie. Atualiza sozinho quando conectar.
+              </p>
+            </>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Fechar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

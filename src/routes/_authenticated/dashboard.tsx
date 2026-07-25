@@ -1,8 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Users, UserPlus, MessageSquareText, Cake, Send, CalendarDays } from "lucide-react";
 import { format, startOfDay, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -85,6 +86,14 @@ function Dashboard() {
       <PageHeader
         title="Dashboard"
         description="Visão geral da sua base de clientes e campanhas."
+        action={
+          <Button asChild size="lg">
+            <Link to="/clientes">
+              <UserPlus className="h-5 w-5 mr-2" />
+              Cadastrar cliente
+            </Link>
+          </Button>
+        }
       />
 
       {isLoading ? (

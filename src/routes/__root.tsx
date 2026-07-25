@@ -77,13 +77,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "PeixariaCRM — Gestão de clientes e campanhas WhatsApp" },
+      { title: "Vitória Mar Pescados — Gestão de clientes e campanhas WhatsApp" },
       {
         name: "description",
         content:
-          "Plataforma completa para peixarias: cadastro rápido de clientes, campanhas de WhatsApp e gestão de aniversariantes.",
+          "Painel de gestão da Vitória Mar Pescados: cadastro rápido de clientes, campanhas de WhatsApp e gestão de aniversariantes.",
       },
-      { property: "og:title", content: "PeixariaCRM" },
+      { property: "og:title", content: "Vitória Mar Pescados" },
       {
         property: "og:description",
         content:
@@ -95,6 +95,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
       {

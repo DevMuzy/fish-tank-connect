@@ -1,7 +1,6 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Fish,
   LayoutDashboard,
   Users,
   MessageSquareText,
@@ -16,6 +15,7 @@ import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import logoMark from "@/assets/logo-mark.png";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -69,10 +69,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0">
         <header className="lg:hidden flex items-center justify-between px-4 h-14 border-b bg-card">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
-              <Fish className="h-4 w-4" />
-            </div>
-            <span className="font-bold">PeixariaCRM</span>
+            <img src={logoMark} alt="Vitória Mar Pescados" className="h-8 w-8 rounded-lg object-cover" />
+            <span className="font-bold">Vitória Mar Pescados</span>
           </div>
           <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)}>
             <Menu className="h-5 w-5" />
@@ -96,11 +94,9 @@ function SidebarInner({
   return (
     <>
       <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
-        <div className="h-10 w-10 rounded-xl bg-sidebar-primary text-sidebar-primary-foreground flex items-center justify-center">
-          <Fish className="h-5 w-5" strokeWidth={2.4} />
-        </div>
+        <img src={logoMark} alt="Vitória Mar Pescados" className="h-11 w-11 rounded-xl object-cover" />
         <div>
-          <div className="font-bold tracking-tight">PeixariaCRM</div>
+          <div className="font-bold tracking-tight">Vitória Mar Pescados</div>
           <div className="text-[11px] text-sidebar-foreground/60 uppercase tracking-widest">
             Painel do gestor
           </div>

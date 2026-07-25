@@ -6,6 +6,7 @@ const disparoSchema = z.object({
   mensagem: z.string().min(2).max(2000),
   tipo_envio: z.enum(["todos", "individual", "aniversariantes"]),
   cliente_id: z.string().uuid().optional().nullable(),
+  imagem_url: z.string().url().optional().nullable(),
 });
 
 /**

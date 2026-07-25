@@ -17,13 +17,20 @@ export class WhatsAppService {
     return this.provider.name;
   }
 
-  async enviar(telefone: string, mensagem: string): Promise<EnvioResultado> {
-    return this.provider.send({ telefone, mensagem });
+  async enviar(telefone: string, mensagem: string, imagemUrl?: string | null): Promise<EnvioResultado> {
+    return this.provider.send({ telefone, mensagem, imagemUrl });
   }
 
   async healthCheck() {
     if (!this.provider.healthCheck) return { ok: true, detail: "sem verificação" };
     return this.provider.healthCheck();
+  }
+
+  async getQrCode() {
+    if (!this.provider.getQrCode) {
+      return { ok: false, error: "Esse provedor não usa pareamento por QR Code." };
+    }
+    return this.provider.getQrCode();
   }
 }
 

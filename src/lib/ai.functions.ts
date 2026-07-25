@@ -48,11 +48,11 @@ export const gerarMensagemIA = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => generateSchema.parse(data))
   .handler(async ({ data }) => {
-    const { createLovableGateway } = await import("./ai-gateway.server");
-    const gateway = createLovableGateway();
+    const { createGeminiGateway } = await import("./ai-gateway.server");
+    const gateway = createGeminiGateway();
 
     const { text } = await generateText({
-      model: gateway("google/gemini-3-flash-preview"),
+      model: gateway("gemini-flash-latest"),
       system: systemPrompt,
       prompt: `${tipoInstrucoes[data.tipo]}\n\nIdeia do usuário:\n"${data.ideia}"\n\nGere a mensagem final:`,
     });

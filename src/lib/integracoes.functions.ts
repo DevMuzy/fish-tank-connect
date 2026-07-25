@@ -88,3 +88,29 @@ export const testarConexao = createServerFn({ method: "POST" })
       .eq("id", data.id);
     return { ok: health.ok, detail: health.detail, status_conexao: novoStatus };
   });
+
+export const gerarQrCode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: integ, error } = await context.supabase
+      .from("integracoes_whatsapp")
+      .select("id, nome, provedor, url_base, token, numero_remetente, ativo, status_conexao")
+      .eq("id", data.id)
+      .single();
+    if (error) throw error;
+
+    const { WhatsAppService } = await import("./whatsapp/WhatsAppService.server");
+    const service = new WhatsAppService(integ as never);
+    const resultado = await service.getQrCode();
+
+    if (resultado.ok) {
+      const novoStatus = resultado.conectado ? "conectado" : "desconhecido";
+      await context.supabase
+        .from("integracoes_whatsapp")
+        .update({ status_conexao: novoStatus, ultimo_check: new Date().toISOString() })
+        .eq("id", data.id);
+    }
+
+    return resultado;
+  });
