@@ -1,12 +1,15 @@
 /**
- * CampaignService — orquestra o disparo de uma campanha inteira.
- * Fluxo:
- *   1. Resolve destinatários conforme tipo_envio (todos | individual | aniversariantes)
- *   2. Cria registro em `mensagens` (status = processando)
- *   3. Enfileira registros em `historico_envios` (status = aguardando)
- *   4. Processa fila sequencialmente com controle de taxa (rate limit)
- *   5. Atualiza status de cada envio (enviando → enviado/falhou) com tentativas e erro
- *   6. Consolida contagem em `mensagens` (sucesso, erros, status final)
+ * CampaignService — orquestra o disparo de uma campanha.
+ * Desenhado em dois passos granulares (em vez de um loop único e longo)
+ * porque a Vercel mata funções serverless de longa duração: com delay de
+ * vários segundos entre mensagens, uma campanha para 100+ contatos passaria
+ * muito do limite de execução. Quem conduz o loop e o delay é o cliente
+ * (mensagens.tsx), chamando `enviarUm` uma vez por destinatário — o que
+ * também é o que permite mostrar progresso ao vivo na tela.
+ *
+ *   1. iniciar()  → resolve destinatários, cria `mensagens` e enfileira
+ *                    `historico_envios` (status = aguardando)
+ *   2. enviarUm()  → chamado uma vez por item da fila, com retry e backoff
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { WhatsAppService, carregarIntegracaoAtiva } from "./WhatsAppService.server";
@@ -30,15 +33,21 @@ type Destinatario = {
 // Acima desse total de destinatários, passa a espaçar os envios — evita
 // que o número seja banido por comportamento de spam em disparos em massa.
 const LIMITE_DISPAROS_SEM_DELAY = 5;
-// Delay aplicado entre cada envio quando o total > LIMITE_DISPAROS_SEM_DELAY.
+// Delay entre cada envio quando o total > LIMITE_DISPAROS_SEM_DELAY.
 // Faixa (min–max) em vez de valor fixo, pra não gerar um intervalo robótico.
-const DELAY_ENTRE_ENVIOS_MIN_MS = 3000;
-const DELAY_ENTRE_ENVIOS_MAX_MS = 7000;
+const DELAY_ENTRE_ENVIOS_MIN_MS = 7000;
+const DELAY_ENTRE_ENVIOS_MAX_MS = 10000;
 const MAX_TENTATIVAS = 2;
 
-function delayAleatorio(minMs: number, maxMs: number): Promise<void> {
-  const ms = minMs + Math.random() * (maxMs - minMs);
-  return new Promise((r) => setTimeout(r, ms));
+// Garante um envio por cliente mesmo que a consulta traga a mesma pessoa
+// mais de uma vez (defesa extra — nunca dois disparos pro mesmo destinatário).
+function deduplicarPorCliente(lista: Destinatario[]): Destinatario[] {
+  const vistos = new Set<string>();
+  return lista.filter((c) => {
+    if (vistos.has(c.id)) return false;
+    vistos.add(c.id);
+    return true;
+  });
 }
 
 async function resolverDestinatarios(
@@ -61,7 +70,7 @@ async function resolverDestinatarios(
     .from("clientes")
     .select("id, nome, telefone, data_nascimento");
   if (error) throw error;
-  const lista = (todos ?? []) as Destinatario[];
+  const lista = deduplicarPorCliente((todos ?? []) as Destinatario[]);
 
   if (input.tipo_envio === "aniversariantes") {
     const hoje = new Date();
@@ -75,12 +84,24 @@ async function resolverDestinatarios(
   return lista;
 }
 
-export type ResumoCampanha = {
-  mensagem_id: string;
-  total: number;
-  sucesso: number;
-  falha: number;
-  provider: string;
+export type FilaItem = {
+  historicoId: string;
+  clienteId: string;
+  nome: string;
+  telefone: string;
+};
+
+export type IniciarResultado = {
+  mensagemId: string;
+  fila: FilaItem[];
+  aplicarDelay: boolean;
+  delayMinMs: number;
+  delayMaxMs: number;
+};
+
+export type EnvioUnicoResultado = {
+  ok: boolean;
+  erro?: string;
 };
 
 export class CampaignService {
@@ -95,13 +116,16 @@ export class CampaignService {
     return new CampaignService(supabase, new WhatsAppService(integracao), userId);
   }
 
-  async executar(input: DisparoInput): Promise<ResumoCampanha> {
+  get providerName() {
+    return this.whatsapp.providerName;
+  }
+
+  async iniciar(input: DisparoInput): Promise<IniciarResultado> {
     const destinatarios = await resolverDestinatarios(this.supabase, input);
     if (destinatarios.length === 0) {
       throw new Error("Nenhum destinatário encontrado para os critérios selecionados.");
     }
 
-    // 1. Cria a campanha
     const { data: msg, error: msgErr } = await this.supabase
       .from("mensagens")
       .insert({
@@ -118,7 +142,6 @@ export class CampaignService {
     if (msgErr) throw msgErr;
     const mensagemId = msg.id as string;
 
-    // 2. Enfileira todos os envios (fila persistente no banco)
     const filaInsert = destinatarios.map((d) => ({
       mensagem_id: mensagemId,
       cliente_id: d.id,
@@ -131,75 +154,65 @@ export class CampaignService {
       .select("id, cliente_id, telefone");
     if (filaErr) throw filaErr;
 
-    // 3. Processa fila
-    let sucesso = 0;
-    let falha = 0;
-    const fila = filaRows ?? [];
-    const aplicarDelay = destinatarios.length > LIMITE_DISPAROS_SEM_DELAY;
+    const nomesPorCliente = new Map(destinatarios.map((d) => [d.id, d.nome]));
+    const fila: FilaItem[] = (filaRows ?? []).map((r) => ({
+      historicoId: r.id as string,
+      clienteId: r.cliente_id as string,
+      telefone: r.telefone as string,
+      nome: nomesPorCliente.get(r.cliente_id as string) ?? "Cliente",
+    }));
 
-    for (let i = 0; i < fila.length; i++) {
-      const item = fila[i];
-      await this.supabase
-        .from("historico_envios")
-        .update({ status: "enviando" })
-        .eq("id", item.id);
+    return {
+      mensagemId,
+      fila,
+      aplicarDelay: destinatarios.length > LIMITE_DISPAROS_SEM_DELAY,
+      delayMinMs: DELAY_ENTRE_ENVIOS_MIN_MS,
+      delayMaxMs: DELAY_ENTRE_ENVIOS_MAX_MS,
+    };
+  }
 
-      let tentativa = 0;
-      let ok = false;
-      let ultimoErro: string | undefined;
-      let ultimaResposta: Record<string, unknown> | undefined;
+  async enviarUm(
+    historicoId: string,
+    telefone: string,
+    mensagem: string,
+    imagemUrl?: string | null,
+  ): Promise<EnvioUnicoResultado> {
+    await this.supabase
+      .from("historico_envios")
+      .update({ status: "enviando" })
+      .eq("id", historicoId);
 
-      while (tentativa < MAX_TENTATIVAS && !ok) {
-        tentativa++;
-        try {
-          const r = await this.whatsapp.enviar(item.telefone, input.mensagem, input.imagem_url);
-          ok = r.ok;
-          ultimaResposta = r.response;
-          ultimoErro = r.error;
-          if (ok) break;
-        } catch (e) {
-          ultimoErro = (e as Error).message;
-        }
-        // pequeno backoff antes de tentar novamente
-        if (!ok && tentativa < MAX_TENTATIVAS) {
-          await new Promise((r) => setTimeout(r, 400));
-        }
+    let tentativa = 0;
+    let ok = false;
+    let ultimoErro: string | undefined;
+    let ultimaResposta: Record<string, unknown> | undefined;
+
+    while (tentativa < MAX_TENTATIVAS && !ok) {
+      tentativa++;
+      try {
+        const r = await this.whatsapp.enviar(telefone, mensagem, imagemUrl);
+        ok = r.ok;
+        ultimaResposta = r.response;
+        ultimoErro = r.error;
+        if (ok) break;
+      } catch (e) {
+        ultimoErro = (e as Error).message;
       }
-
-      const statusFinal = ok ? "enviado" : "falhou";
-      if (ok) sucesso++;
-      else falha++;
-
-      await this.supabase
-        .from("historico_envios")
-        .update({
-          status: statusFinal,
-          tentativas: tentativa,
-          ultimo_erro: ok ? null : ultimoErro ?? "Erro desconhecido",
-          resposta_api: ultimaResposta ?? (ultimoErro ? { error: ultimoErro } : null),
-        })
-        .eq("id", item.id);
-
-      // rate-limit entre envios, só quando o disparo é em massa (>5) e ainda há próximo item
-      if (aplicarDelay && i < fila.length - 1) {
-        await delayAleatorio(DELAY_ENTRE_ENVIOS_MIN_MS, DELAY_ENTRE_ENVIOS_MAX_MS);
+      if (!ok && tentativa < MAX_TENTATIVAS) {
+        await new Promise((r) => setTimeout(r, 400));
       }
     }
 
-    // 4. Consolida na campanha
-    const statusCampanha =
-      falha === 0 ? "concluido" : sucesso === 0 ? "falhou" : "parcial";
     await this.supabase
-      .from("mensagens")
-      .update({ status: statusCampanha, sucesso, erros: falha })
-      .eq("id", mensagemId);
+      .from("historico_envios")
+      .update({
+        status: ok ? "enviado" : "falhou",
+        tentativas: tentativa,
+        ultimo_erro: ok ? null : ultimoErro ?? "Erro desconhecido",
+        resposta_api: ultimaResposta ?? (ultimoErro ? { error: ultimoErro } : null),
+      })
+      .eq("id", historicoId);
 
-    return {
-      mensagem_id: mensagemId,
-      total: destinatarios.length,
-      sucesso,
-      falha,
-      provider: this.whatsapp.providerName,
-    };
+    return { ok, erro: ok ? undefined : ultimoErro ?? "Erro desconhecido" };
   }
 }

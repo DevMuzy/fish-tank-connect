@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn as tsrUseServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Sparkles, Send, Loader2, Image as ImageIcon, X } from "lucide-react";
+import { Sparkles, Send, Loader2, Image as ImageIcon, X, Check } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/app-shell";
@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -26,7 +27,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { gerarMensagemIA } from "@/lib/ai.functions";
-import { enviarCampanha } from "@/lib/messages.functions";
+import { iniciarCampanha, enviarContatoCampanha } from "@/lib/messages.functions";
+
+type FalhaItem = { nome: string; telefone: string; erro: string };
+type Progresso = {
+  total: number;
+  enviados: number;
+  sucesso: number;
+  falhas: FalhaItem[];
+  concluido: boolean;
+  cancelado: boolean;
+};
 
 export const Route = createFileRoute("/_authenticated/mensagens")({
   component: MensagensPage,
@@ -53,6 +64,10 @@ function MensagensPage() {
   const [imagemUrl, setImagemUrl] = useState<string | null>(null);
   const [uploadingImagem, setUploadingImagem] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [progresso, setProgresso] = useState<Progresso | null>(null);
+  const [providerUsado, setProviderUsado] = useState("");
+  const cancelarRef = useRef(false);
 
   const { data: clientes = [] } = useQuery({
     queryKey: ["clientes-simple"],
@@ -67,7 +82,8 @@ function MensagensPage() {
   });
 
   const gerarIA = tsrUseServerFn(gerarMensagemIA);
-  const enviarFn = tsrUseServerFn(enviarCampanha);
+  const iniciarFn = tsrUseServerFn(iniciarCampanha);
+  const enviarContatoFn = tsrUseServerFn(enviarContatoCampanha);
 
   async function handleSelecionarImagem(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -108,12 +124,20 @@ function MensagensPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const enviar = useMutation({
-    mutationFn: async () => {
-      if (!mensagem.trim()) throw new Error("Escreva ou gere uma mensagem antes de enviar.");
-      if (destino === "individual" && !clienteId)
-        throw new Error("Selecione um cliente destinatário.");
-      return await enviarFn({
+  function cancelarEnvio() {
+    cancelarRef.current = true;
+    setProgresso((p) => (p ? { ...p, cancelado: true } : p));
+  }
+
+  async function iniciarEDisparar() {
+    if (!mensagem.trim()) return toast.error("Escreva ou gere uma mensagem antes de enviar.");
+    if (destino === "individual" && !clienteId)
+      return toast.error("Selecione um cliente destinatário.");
+
+    cancelarRef.current = false;
+    setEnviando(true);
+    try {
+      const r = await iniciarFn({
         data: {
           mensagem: mensagem.trim(),
           tipo_envio: destino,
@@ -121,21 +145,84 @@ function MensagensPage() {
           imagem_url: imagemUrl,
         },
       });
-    },
-    onSuccess: (r) => {
+      setProviderUsado(r.provider);
+      setProgresso({
+        total: r.fila.length,
+        enviados: 0,
+        sucesso: 0,
+        falhas: [],
+        concluido: false,
+        cancelado: false,
+      });
+
+      let sucesso = 0;
+      const falhas: FalhaItem[] = [];
+
+      for (let i = 0; i < r.fila.length; i++) {
+        if (cancelarRef.current) break;
+        const item = r.fila[i];
+        let resultado: { ok: boolean; erro?: string };
+        try {
+          resultado = await enviarContatoFn({
+            data: {
+              historico_id: item.historicoId,
+              telefone: item.telefone,
+              mensagem: mensagem.trim(),
+              imagem_url: imagemUrl,
+            },
+          });
+        } catch (e) {
+          resultado = { ok: false, erro: (e as Error).message };
+        }
+
+        if (resultado.ok) sucesso++;
+        else falhas.push({ nome: item.nome, telefone: item.telefone, erro: resultado.erro ?? "Erro desconhecido" });
+
+        setProgresso({
+          total: r.fila.length,
+          enviados: i + 1,
+          sucesso,
+          falhas: [...falhas],
+          concluido: false,
+          cancelado: cancelarRef.current,
+        });
+
+        const isUltimo = i === r.fila.length - 1;
+        if (r.aplicarDelay && !isUltimo && !cancelarRef.current) {
+          const ms = r.delayMinMs + Math.random() * (r.delayMaxMs - r.delayMinMs);
+          await new Promise((res) => setTimeout(res, ms));
+        }
+      }
+
+      const falha = falhas.length;
+      const statusFinal = cancelarRef.current
+        ? "parcial"
+        : falha === 0
+          ? "concluido"
+          : sucesso === 0
+            ? "falhou"
+            : "parcial";
+      await supabase
+        .from("mensagens")
+        .update({ status: statusFinal, sucesso, erros: falha })
+        .eq("id", r.mensagemId);
+
+      setProgresso((p) => (p ? { ...p, concluido: true } : p));
       toast.success(
-        `Enviado! ${r.sucesso}/${r.total} entregues (provedor: ${r.provider})`,
+        cancelarRef.current
+          ? `Envio cancelado — ${sucesso}/${r.fila.length} entregues`
+          : `Envio concluído: ${sucesso}/${r.fila.length} entregues`,
       );
-      setConfirmOpen(false);
       setMensagem("");
       setIdeia("");
       setImagemUrl(null);
-    },
-    onError: (e: Error) => {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error((e as Error).message);
       setConfirmOpen(false);
-    },
-  });
+    } finally {
+      setEnviando(false);
+    }
+  }
 
   const totalEstimado =
     destino === "todos"
@@ -350,44 +437,136 @@ function MensagensPage() {
         </div>
       </div>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirma o envio desta mensagem?</DialogTitle>
-          </DialogHeader>
-          {imagemUrl && (
-            <img
-              src={imagemUrl}
-              alt="Foto da campanha"
-              className="h-32 w-full rounded-md object-cover"
-            />
-          )}
-          <div className="rounded-md bg-muted p-4 text-sm whitespace-pre-wrap max-h-64 overflow-auto">
-            {mensagem}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Destino:{" "}
-            <strong>
-              {destino === "todos"
-                ? `Todos os clientes (${clientes.length})`
-                : destino === "individual"
-                  ? clientes.find((c) => c.id === clienteId)?.nome ?? "—"
-                  : "Aniversariantes de hoje"}
-            </strong>
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={() => enviar.mutate()} disabled={enviar.isPending}>
-              {enviar.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4 mr-2" />
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={(v) => {
+          // não deixa fechar no meio do envio — só antes de começar ou depois de concluído
+          if (!v && progresso && !progresso.concluido) return;
+          setConfirmOpen(v);
+          if (!v) setProgresso(null);
+        }}
+      >
+        <DialogContent className={progresso ? "max-w-lg" : undefined}>
+          {!progresso ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Confirma o envio desta mensagem?</DialogTitle>
+              </DialogHeader>
+              {imagemUrl && (
+                <img
+                  src={imagemUrl}
+                  alt="Foto da campanha"
+                  className="h-32 w-full rounded-md object-cover"
+                />
               )}
-              Enviar
-            </Button>
-          </DialogFooter>
+              <div className="rounded-md bg-muted p-4 text-sm whitespace-pre-wrap max-h-64 overflow-auto">
+                {mensagem}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Destino:{" "}
+                <strong>
+                  {destino === "todos"
+                    ? `Todos os clientes (${clientes.length})`
+                    : destino === "individual"
+                      ? clientes.find((c) => c.id === clienteId)?.nome ?? "—"
+                      : "Aniversariantes de hoje"}
+                </strong>
+              </p>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={() => iniciarEDisparar()} disabled={enviando}>
+                  {enviando ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4 mr-2" />
+                  )}
+                  Enviar
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {progresso.concluido
+                    ? progresso.cancelado
+                      ? "Envio cancelado"
+                      : "Envio concluído"
+                    : "Enviando mensagens..."}
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-2">
+                <Progress value={(progresso.enviados / progresso.total) * 100} />
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    {progresso.enviados} / {progresso.total} processados
+                    {providerUsado && ` · ${providerUsado}`}
+                  </span>
+                  <span className="flex items-center gap-3">
+                    <span className="inline-flex items-center gap-1 text-success font-medium">
+                      <Check className="h-3.5 w-3.5" /> {progresso.sucesso}
+                    </span>
+                    {progresso.falhas.length > 0 && (
+                      <span className="inline-flex items-center gap-1 text-destructive font-medium">
+                        <X className="h-3.5 w-3.5" /> {progresso.falhas.length}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {progresso.falhas.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-destructive">
+                    Falharam ({progresso.falhas.length}):
+                  </p>
+                  <div className="max-h-48 overflow-auto rounded-md border border-destructive/30 divide-y divide-destructive/20">
+                    {progresso.falhas.map((f, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between gap-3 bg-destructive/10 px-3 py-2 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium text-destructive truncate">{f.nome}</div>
+                          <div className="text-destructive/70">{f.telefone}</div>
+                        </div>
+                        <div
+                          className="text-destructive/80 text-right shrink-0 max-w-[45%] truncate"
+                          title={f.erro}
+                        >
+                          {f.erro}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter>
+                {!progresso.concluido ? (
+                  <Button
+                    variant="outline"
+                    onClick={cancelarEnvio}
+                    disabled={progresso.cancelado}
+                  >
+                    {progresso.cancelado ? "Cancelando..." : "Cancelar envio"}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => {
+                      setConfirmOpen(false);
+                      setProgresso(null);
+                    }}
+                  >
+                    Fechar
+                  </Button>
+                )}
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
