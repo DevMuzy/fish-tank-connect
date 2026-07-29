@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { dataDoBanco } from "@/lib/datas";
 
 export const Route = createFileRoute("/_authenticated/clientes")({
   component: ClientesPage,
@@ -295,7 +296,7 @@ function ClientesPage() {
                         </TableCell>
                         <TableCell>{c.telefone}</TableCell>
                         <TableCell>
-                          {format(new Date(c.data_nascimento), "dd/MM/yyyy")}
+                          {format(dataDoBanco(c.data_nascimento), "dd/MM/yyyy")}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-xs">
                           {format(new Date(c.created_at), "dd/MM/yyyy")}

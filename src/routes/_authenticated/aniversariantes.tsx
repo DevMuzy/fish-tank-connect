@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { dataDoBanco } from "@/lib/datas";
 
 export const Route = createFileRoute("/_authenticated/aniversariantes")({
   component: AnivPage,
@@ -43,9 +44,9 @@ function AnivPage() {
   const proximos: Array<Cliente & { dias: number }> = [];
 
   (data ?? []).forEach((c) => {
-    const d = new Date(c.data_nascimento);
-    const m = d.getUTCMonth() + 1;
-    const day = d.getUTCDate();
+    const d = dataDoBanco(c.data_nascimento);
+    const m = d.getMonth() + 1;
+    const day = d.getDate();
     if (m === mm && day === dd) hoje.push(c);
     if (m === mm) mes.push({ ...c, dia: day });
     const proxima = new Date(now.getFullYear(), m - 1, day);
@@ -114,7 +115,7 @@ function AnivPage() {
                     id: c.id,
                     nome: c.nome,
                     telefone: c.telefone,
-                    sub: format(new Date(c.data_nascimento), "dd 'de' MMMM", { locale: ptBR }),
+                    sub: format(dataDoBanco(c.data_nascimento), "dd 'de' MMMM", { locale: ptBR }),
                     right: c.dias === 0 ? "Hoje" : `em ${c.dias} dia${c.dias > 1 ? "s" : ""}`,
                   }))}
                 />

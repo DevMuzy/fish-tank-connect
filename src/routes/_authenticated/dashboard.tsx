@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Users, UserPlus, MessageSquareText, Cake, Send, CalendarDays } from "lucide-react";
 import { format, startOfDay, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { dataDoBanco } from "@/lib/datas";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
@@ -54,9 +55,9 @@ function Dashboard() {
       }> = [];
 
       (allClientes || []).forEach((c) => {
-        const d = new Date(c.data_nascimento);
-        const m = d.getUTCMonth() + 1;
-        const day = d.getUTCDate();
+        const d = dataDoBanco(c.data_nascimento);
+        const m = d.getMonth() + 1;
+        const day = d.getDate();
         if (m === mmHoje && day === ddHoje) anivHoje.push(c);
         const proxima = new Date(now.getFullYear(), m - 1, day);
         if (proxima < startOfDay(now)) proxima.setFullYear(now.getFullYear() + 1);
@@ -192,7 +193,7 @@ function Dashboard() {
                         <div>
                           <div className="font-medium">{c.nome}</div>
                           <div className="text-xs text-muted-foreground">
-                            {format(new Date(c.data_nascimento), "dd 'de' MMMM", { locale: ptBR })}
+                            {format(dataDoBanco(c.data_nascimento), "dd 'de' MMMM", { locale: ptBR })}
                           </div>
                         </div>
                         <span className="text-xs font-semibold px-2 py-1 rounded-full bg-accent/20 text-accent-foreground">

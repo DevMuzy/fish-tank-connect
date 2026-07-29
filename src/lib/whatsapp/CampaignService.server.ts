@@ -17,6 +17,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { WhatsAppService, carregarIntegracaoAtiva } from "./WhatsAppService.server";
 import { normalizeTelefone } from "./providers.server";
 import { DELAY_ENTRE_ENVIOS_MS } from "./config";
+import { fazAniversarioHoje } from "@/lib/datas";
 
 export type TipoEnvio = "todos" | "individual" | "aniversariantes";
 
@@ -112,13 +113,10 @@ async function resolverDestinatarios(
   const lista = deduplicarPorCliente((todos ?? []) as Destinatario[]);
 
   if (input.tipo_envio === "aniversariantes") {
-    const hoje = new Date();
-    const mm = hoje.getUTCMonth() + 1;
-    const dd = hoje.getUTCDate();
-    return lista.filter((c) => {
-      const d = new Date(c.data_nascimento);
-      return d.getUTCMonth() + 1 === mm && d.getUTCDate() === dd;
-    });
+    // Comparação no fuso da loja, não em UTC: o servidor da Vercel roda em
+    // UTC e das 21h à meia-noite no Brasil lá já é o dia seguinte — um
+    // disparo noturno pegaria os aniversariantes de amanhã.
+    return lista.filter((c) => fazAniversarioHoje(c.data_nascimento));
   }
   return lista;
 }
