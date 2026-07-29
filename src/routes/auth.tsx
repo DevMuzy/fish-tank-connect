@@ -4,11 +4,18 @@ import { toast } from "sonner";
 
 import logoFull from "@/assets/logo-full.jpg";
 import { supabase } from "@/integrations/supabase/client";
+import { verificarAcessoAoPainel } from "@/lib/empresa";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export const Route = createFileRoute("/auth")({
+  // `erro` chega quando o portão do painel expulsa uma sessão salva de outra
+  // empresa — sem isso o usuário voltaria pro login sem entender por quê.
+  // Retorna `{}` (e não `{ erro: undefined }`) para o parâmetro ficar de fato
+  // opcional, senão todo `navigate({ to: "/auth" })` passa a exigir `search`.
+  validateSearch: (search: Record<string, unknown>): { erro?: string } =>
+    typeof search.erro === "string" ? { erro: search.erro } : {},
   head: () => ({
     meta: [
       { title: "Entrar — Vitória Mar Pescados" },
@@ -21,22 +28,44 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const { erro } = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (erro) toast.error(erro);
+  }, [erro]);
+
+  useEffect(() => {
+    // Não manda direto pro dashboard se acabamos de expulsar a sessão: seria
+    // um ping-pong entre /auth e /dashboard.
+    if (erro) return;
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) navigate({ to: "/dashboard", replace: true });
     });
-  }, [navigate]);
+  }, [navigate, erro]);
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setLoading(false);
+      return toast.error(error.message);
+    }
+
+    // Senha certa não quer dizer painel certo: o login vale no projeto Supabase
+    // inteiro, compartilhado entre os clientes. Recusamos aqui, antes de abrir
+    // o painel, para a pessoa receber o motivo em vez de um dashboard vazio.
+    const acesso = await verificarAcessoAoPainel();
+    if (!acesso.permitido) {
+      await supabase.auth.signOut();
+      setLoading(false);
+      return toast.error(acesso.motivo);
+    }
+
     setLoading(false);
-    if (error) return toast.error(error.message);
     toast.success("Bem-vindo!");
     navigate({ to: "/dashboard", replace: true });
   }

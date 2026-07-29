@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthDaEmpresa } from "@/integrations/supabase/empresa-middleware";
 import { generateText } from "ai";
 import { z } from "zod";
 
@@ -45,7 +45,7 @@ const tipoInstrucoes: Record<string, string> = {
 };
 
 export const gerarMensagemIA = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthDaEmpresa])
   .inputValidator((data: unknown) => generateSchema.parse(data))
   .handler(async ({ data }) => {
     const { createGeminiGateway } = await import("./ai-gateway.server");

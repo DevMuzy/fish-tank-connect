@@ -5,7 +5,7 @@
  */
 import type { EnvioResultado, IntegracaoAtiva, QrCodeResultado, WhatsAppProvider } from "./types";
 
-function normalizeTelefone(telefone: string): string {
+export function normalizeTelefone(telefone: string): string {
   const digits = telefone.replace(/\D/g, "");
   // Se não tem código do país, presume Brasil (55)
   if (digits.length <= 11) return `55${digits}`;

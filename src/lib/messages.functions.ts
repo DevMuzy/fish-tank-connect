@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthDaEmpresa } from "@/integrations/supabase/empresa-middleware";
 import { z } from "zod";
 
 const iniciarSchema = z.object({
@@ -16,7 +16,7 @@ const iniciarSchema = z.object({
  * CampaignService.server.ts para o porquê dessa divisão em duas etapas).
  */
 export const iniciarCampanha = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthDaEmpresa])
   .inputValidator((data: unknown) => iniciarSchema.parse(data))
   .handler(async ({ data, context }) => {
     const { CampaignService } = await import("./whatsapp/CampaignService.server");
@@ -33,7 +33,7 @@ const enviarContatoSchema = z.object({
 });
 
 export const enviarContatoCampanha = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthDaEmpresa])
   .inputValidator((data: unknown) => enviarContatoSchema.parse(data))
   .handler(async ({ data, context }) => {
     const { CampaignService } = await import("./whatsapp/CampaignService.server");

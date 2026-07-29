@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { gerarMensagemIA } from "@/lib/ai.functions";
 import { iniciarCampanha, enviarContatoCampanha } from "@/lib/messages.functions";
+import { DELAY_ENTRE_ENVIOS_MS } from "@/lib/whatsapp/config";
 
 type FalhaItem = { nome: string; telefone: string; erro: string };
 type Progresso = {
@@ -37,7 +38,20 @@ type Progresso = {
   falhas: FalhaItem[];
   concluido: boolean;
   cancelado: boolean;
+  /** Removidos da fila por já terem recebido esse mesmo texto antes. */
+  jaReceberam: number;
+  delayMs: number;
 };
+
+/** "12 min" / "1h 05min" — para o operador saber quanto a fila ainda leva. */
+function formatarDuracao(ms: number) {
+  const totalMin = Math.ceil(ms / 60000);
+  if (totalMin < 1) return "menos de 1 min";
+  if (totalMin < 60) return `${totalMin} min`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m === 0 ? `${h}h` : `${h}h ${String(m).padStart(2, "0")}min`;
+}
 
 export const Route = createFileRoute("/_authenticated/mensagens")({
   component: MensagensPage,
@@ -45,8 +59,8 @@ export const Route = createFileRoute("/_authenticated/mensagens")({
 
 const modelos = [
   { id: "livre", label: "✍️ Livre", tipo: "livre" as const },
-  { id: "promo", label: "🐟 Promoção", tipo: "promocao" as const },
-  { id: "novo", label: "🦐 Produto novo", tipo: "produto_novo" as const },
+  { id: "promo", label: "🏷️ Promoção", tipo: "promocao" as const },
+  { id: "novo", label: "🛋️ Novidade", tipo: "produto_novo" as const },
   { id: "relampago", label: "🔥 Oferta relâmpago", tipo: "oferta_relampago" as const },
   { id: "fiel", label: "❤️ Cliente fiel", tipo: "cliente_fiel" as const },
   { id: "aniv", label: "🎉 Aniversário", tipo: "aniversario" as const },
@@ -68,6 +82,9 @@ function MensagensPage() {
   const [progresso, setProgresso] = useState<Progresso | null>(null);
   const [providerUsado, setProviderUsado] = useState("");
   const cancelarRef = useRef(false);
+  // Trava síncrona: `disabled={enviando}` só vale depois do re-render, então
+  // dois cliques no mesmo tick abririam duas campanhas com o mesmo texto.
+  const emAndamentoRef = useRef(false);
 
   const { data: clientes = [] } = useQuery({
     queryKey: ["clientes-simple"],
@@ -78,6 +95,21 @@ function MensagensPage() {
         .order("nome");
       if (error) throw error;
       return data;
+    },
+  });
+
+  // Qual provedor vai de fato disparar — evita prometer envio real quando a
+  // integração ativa é o mock, e vice-versa.
+  const { data: integracaoAtiva } = useQuery({
+    queryKey: ["integracao-ativa"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("integracoes_whatsapp")
+        .select("nome, provedor, status_conexao")
+        .eq("ativo", true)
+        .maybeSingle();
+      if (error) throw error;
+      return data as { nome: string; provedor: string; status_conexao: string } | null;
     },
   });
 
@@ -99,8 +131,16 @@ function MensagensPage() {
     }
     setUploadingImagem(true);
     try {
+      // O bucket é compartilhado entre as empresas, e a policy de upload exige
+      // que o arquivo caia na pasta da própria empresa. Consultado a cada
+      // upload em vez de cacheado no módulo: um cache sobreviveria à troca de
+      // usuário e mandaria o anexo para a pasta errada.
+      const { data: empresaId, error: empresaErr } = await supabase.rpc("empresa_do_usuario");
+      if (empresaErr) throw empresaErr;
+      if (!empresaId) throw new Error("Usuário sem empresa vinculada.");
+
       const ext = file.name.split(".").pop() || "jpg";
-      const path = `${crypto.randomUUID()}.${ext}`;
+      const path = `${empresaId}/${crypto.randomUUID()}.${ext}`;
       const { error } = await supabase.storage.from("campanhas").upload(path, file);
       if (error) throw error;
       const { data } = supabase.storage.from("campanhas").getPublicUrl(path);
@@ -130,10 +170,12 @@ function MensagensPage() {
   }
 
   async function iniciarEDisparar() {
+    if (emAndamentoRef.current) return;
     if (!mensagem.trim()) return toast.error("Escreva ou gere uma mensagem antes de enviar.");
     if (destino === "individual" && !clienteId)
       return toast.error("Selecione um cliente destinatário.");
 
+    emAndamentoRef.current = true;
     cancelarRef.current = false;
     setEnviando(true);
     try {
@@ -153,6 +195,8 @@ function MensagensPage() {
         falhas: [],
         concluido: false,
         cancelado: false,
+        jaReceberam: r.jaReceberam,
+        delayMs: r.delayMs,
       });
 
       let sucesso = 0;
@@ -185,12 +229,13 @@ function MensagensPage() {
           falhas: [...falhas],
           concluido: false,
           cancelado: cancelarRef.current,
+          jaReceberam: r.jaReceberam,
+          delayMs: r.delayMs,
         });
 
         const isUltimo = i === r.fila.length - 1;
-        if (r.aplicarDelay && !isUltimo && !cancelarRef.current) {
-          const ms = r.delayMinMs + Math.random() * (r.delayMaxMs - r.delayMinMs);
-          await new Promise((res) => setTimeout(res, ms));
+        if (!isUltimo && !cancelarRef.current) {
+          await new Promise((res) => setTimeout(res, r.delayMs));
         }
       }
 
@@ -208,10 +253,11 @@ function MensagensPage() {
         .eq("id", r.mensagemId);
 
       setProgresso((p) => (p ? { ...p, concluido: true } : p));
+      const pulados = r.jaReceberam > 0 ? ` · ${r.jaReceberam} já haviam recebido` : "";
       toast.success(
         cancelarRef.current
-          ? `Envio cancelado — ${sucesso}/${r.fila.length} entregues`
-          : `Envio concluído: ${sucesso}/${r.fila.length} entregues`,
+          ? `Envio cancelado — ${sucesso}/${r.fila.length} entregues${pulados}`
+          : `Envio concluído: ${sucesso}/${r.fila.length} entregues${pulados}`,
       );
       setMensagem("");
       setIdeia("");
@@ -220,6 +266,7 @@ function MensagensPage() {
       toast.error((e as Error).message);
       setConfirmOpen(false);
     } finally {
+      emAndamentoRef.current = false;
       setEnviando(false);
     }
   }
@@ -267,7 +314,7 @@ function MensagensPage() {
                 <Textarea
                   id="ideia"
                   rows={2}
-                  placeholder="Ex.: salmão com desconto até domingo."
+                  placeholder="Ex.: cozinha planejada com condição especial até domingo."
                   value={ideia}
                   onChange={(e) => setIdeia(e.target.value)}
                 />
@@ -419,6 +466,15 @@ function MensagensPage() {
                     ? `${totalEstimado} destinatário(s)`
                     : totalEstimado}
                 </div>
+                {typeof totalEstimado === "number" && totalEstimado > 1 && (
+                  <div className="text-muted-foreground mt-1">
+                    ~{formatarDuracao((totalEstimado - 1) * DELAY_ENTRE_ENVIOS_MS)} de fila
+                    ({DELAY_ENTRE_ENVIOS_MS / 1000}s entre cada envio)
+                  </div>
+                )}
+                <div className="text-muted-foreground mt-1">
+                  Quem já recebeu essa mesma mensagem é retirado da fila.
+                </div>
               </div>
               <Button
                 className="w-full"
@@ -429,8 +485,23 @@ function MensagensPage() {
                 Enviar campanha
               </Button>
               <p className="text-[11px] text-muted-foreground">
-                Provedor WhatsApp em modo <span className="font-medium">simulado</span>.
-                Envios serão registrados no histórico sem chamar API externa.
+                {!integracaoAtiva ? (
+                  <>
+                    Nenhuma integração de WhatsApp ativa — configure em{" "}
+                    <span className="font-medium">Configurações</span> antes de disparar.
+                  </>
+                ) : integracaoAtiva.provedor === "mock" ? (
+                  <>
+                    Provedor WhatsApp em modo <span className="font-medium">simulado</span>.
+                    Envios serão registrados no histórico sem chamar API externa.
+                  </>
+                ) : (
+                  <>
+                    Enviando por <span className="font-medium">{integracaoAtiva.nome}</span>.
+                    {integracaoAtiva.status_conexao !== "conectado" &&
+                      " Conexão ainda não confirmada — teste ou leia o QR Code em Configurações."}
+                  </>
+                )}
               </p>
             </CardContent>
           </Card>
@@ -500,6 +571,24 @@ function MensagensPage() {
 
               <div className="space-y-2">
                 <Progress value={(progresso.enviados / progresso.total) * 100} />
+                {!progresso.concluido && progresso.enviados < progresso.total && (
+                  <p className="text-xs text-muted-foreground">
+                    Restam ~
+                    {formatarDuracao(
+                      (progresso.total - progresso.enviados) * progresso.delayMs,
+                    )}{" "}
+                    — {progresso.delayMs / 1000}s entre cada envio. Mantenha esta aba aberta.
+                  </p>
+                )}
+                {progresso.jaReceberam > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {progresso.jaReceberam}{" "}
+                    {progresso.jaReceberam === 1
+                      ? "cliente foi retirado da fila por já ter recebido"
+                      : "clientes foram retirados da fila por já terem recebido"}{" "}
+                    essa mesma mensagem.
+                  </p>
+                )}
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">
                     {progresso.enviados} / {progresso.total} processados

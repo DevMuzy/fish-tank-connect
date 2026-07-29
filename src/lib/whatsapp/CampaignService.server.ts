@@ -7,12 +7,16 @@
  * (mensagens.tsx), chamando `enviarUm` uma vez por destinatário — o que
  * também é o que permite mostrar progresso ao vivo na tela.
  *
- *   1. iniciar()  → resolve destinatários, cria `mensagens` e enfileira
- *                    `historico_envios` (status = aguardando)
- *   2. enviarUm()  → chamado uma vez por item da fila, com retry e backoff
+ *   1. iniciar()  → resolve destinatários, remove quem já recebeu esse texto,
+ *                    cria `mensagens` e enfileira `historico_envios`
+ *                    (status = aguardando)
+ *   2. enviarUm()  → chamado uma vez por item da fila; reserva a linha antes
+ *                    de enviar, então cada destinatário recebe no máximo uma vez
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { WhatsAppService, carregarIntegracaoAtiva } from "./WhatsAppService.server";
+import { normalizeTelefone } from "./providers.server";
+import { DELAY_ENTRE_ENVIOS_MS } from "./config";
 
 export type TipoEnvio = "todos" | "individual" | "aniversariantes";
 
@@ -30,24 +34,59 @@ type Destinatario = {
   data_nascimento: string;
 };
 
-// Acima desse total de destinatários, passa a espaçar os envios — evita
-// que o número seja banido por comportamento de spam em disparos em massa.
-const LIMITE_DISPAROS_SEM_DELAY = 5;
-// Delay entre cada envio quando o total > LIMITE_DISPAROS_SEM_DELAY.
-// Faixa (min–max) em vez de valor fixo, pra não gerar um intervalo robótico.
-const DELAY_ENTRE_ENVIOS_MIN_MS = 7000;
-const DELAY_ENTRE_ENVIOS_MAX_MS = 10000;
-const MAX_TENTATIVAS = 2;
+// Sem retry automático, de propósito: quando o envio falha *depois* que a
+// Evolution já entregou (timeout, queda de conexão na volta), repetir manda
+// a mesma mensagem duas vezes pro mesmo contato. Falha vira registro de
+// falha no histórico e o operador reenvia individualmente se quiser.
+const MAX_TENTATIVAS = 1;
 
-// Garante um envio por cliente mesmo que a consulta traga a mesma pessoa
-// mais de uma vez (defesa extra — nunca dois disparos pro mesmo destinatário).
+// Garante um envio por pessoa mesmo que a consulta traga a mesma pessoa mais
+// de uma vez. Deduplica também por telefone normalizado: `clientes.telefone`
+// é UNIQUE como texto, então "27999255959" e "(27) 99925-5959" convivem como
+// cadastros distintos — mas são o mesmo WhatsApp.
 function deduplicarPorCliente(lista: Destinatario[]): Destinatario[] {
-  const vistos = new Set<string>();
+  const idsVistos = new Set<string>();
+  const telefonesVistos = new Set<string>();
   return lista.filter((c) => {
-    if (vistos.has(c.id)) return false;
-    vistos.add(c.id);
+    const tel = normalizeTelefone(c.telefone);
+    if (idsVistos.has(c.id) || telefonesVistos.has(tel)) return false;
+    idsVistos.add(c.id);
+    telefonesVistos.add(tel);
     return true;
   });
+}
+
+/**
+ * Clientes que já receberam *este mesmo texto* em qualquer campanha anterior.
+ * É o que impede o mesmo cliente de receber a mesma mensagem duas vezes,
+ * mesmo que o operador dispare a campanha de novo por engano.
+ *
+ * Só conta envio que de fato saiu (ou está saindo). Quem falhou continua
+ * elegível — senão um erro de rede deixaria o cliente sem receber pra sempre.
+ */
+async function clientesQueJaReceberam(
+  supabase: SupabaseClient,
+  mensagem: string,
+): Promise<Set<string>> {
+  const { data: campanhas, error: campErr } = await supabase
+    .from("mensagens")
+    .select("id")
+    .eq("mensagem", mensagem);
+  if (campErr) throw campErr;
+
+  const ids = (campanhas ?? []).map((m) => m.id as string);
+  if (ids.length === 0) return new Set();
+
+  const { data: envios, error } = await supabase
+    .from("historico_envios")
+    .select("cliente_id")
+    .in("mensagem_id", ids)
+    .in("status", ["enviado", "simulado", "enviando"]);
+  if (error) throw error;
+
+  return new Set(
+    (envios ?? []).map((e) => e.cliente_id as string | null).filter((id): id is string => !!id),
+  );
 }
 
 async function resolverDestinatarios(
@@ -94,14 +133,16 @@ export type FilaItem = {
 export type IniciarResultado = {
   mensagemId: string;
   fila: FilaItem[];
-  aplicarDelay: boolean;
-  delayMinMs: number;
-  delayMaxMs: number;
+  delayMs: number;
+  /** Quantos foram removidos da fila por já terem recebido esse mesmo texto. */
+  jaReceberam: number;
 };
 
 export type EnvioUnicoResultado = {
   ok: boolean;
   erro?: string;
+  /** true quando a fila já havia sido processada e o envio foi ignorado. */
+  duplicado?: boolean;
 };
 
 export class CampaignService {
@@ -121,9 +162,21 @@ export class CampaignService {
   }
 
   async iniciar(input: DisparoInput): Promise<IniciarResultado> {
-    const destinatarios = await resolverDestinatarios(this.supabase, input);
-    if (destinatarios.length === 0) {
+    const candidatos = await resolverDestinatarios(this.supabase, input);
+    if (candidatos.length === 0) {
       throw new Error("Nenhum destinatário encontrado para os critérios selecionados.");
+    }
+
+    const jaReceberamIds = await clientesQueJaReceberam(this.supabase, input.mensagem);
+    const destinatarios = candidatos.filter((d) => !jaReceberamIds.has(d.id));
+    const jaReceberam = candidatos.length - destinatarios.length;
+
+    if (destinatarios.length === 0) {
+      throw new Error(
+        candidatos.length === 1
+          ? "Esse cliente já recebeu essa mensagem. Nada foi enviado."
+          : `Todos os ${candidatos.length} destinatários já receberam essa mensagem. Nada foi enviado.`,
+      );
     }
 
     const { data: msg, error: msgErr } = await this.supabase
@@ -162,13 +215,17 @@ export class CampaignService {
       nome: nomesPorCliente.get(r.cliente_id as string) ?? "Cliente",
     }));
 
-    return {
-      mensagemId,
-      fila,
-      aplicarDelay: destinatarios.length > LIMITE_DISPAROS_SEM_DELAY,
-      delayMinMs: DELAY_ENTRE_ENVIOS_MIN_MS,
-      delayMaxMs: DELAY_ENTRE_ENVIOS_MAX_MS,
-    };
+    return { mensagemId, fila, delayMs: await this.delayDaEmpresa(), jaReceberam };
+  }
+
+  /**
+   * Delay entre envios, lido do banco. A RLS de `empresas` só devolve a linha
+   * da própria empresa, então não há como pegar o valor de outra.
+   * Cai no default de código apenas se a linha sumir — nunca abaixo de 12s.
+   */
+  private async delayDaEmpresa(): Promise<number> {
+    const { data } = await this.supabase.from("empresas").select("delay_envio_ms").maybeSingle();
+    return Math.max(data?.delay_envio_ms ?? DELAY_ENTRE_ENVIOS_MS, DELAY_ENTRE_ENVIOS_MS);
   }
 
   async enviarUm(
@@ -177,10 +234,21 @@ export class CampaignService {
     mensagem: string,
     imagemUrl?: string | null,
   ): Promise<EnvioUnicoResultado> {
-    await this.supabase
+    // Claim atômico: só segue quem conseguir tirar a linha de "aguardando".
+    // Um UPDATE ... WHERE status = 'aguardando' é atômico no Postgres, então
+    // duas chamadas concorrentes pro mesmo historicoId (duplo clique, retry do
+    // navegador, aba reaberta) — só uma envia. As outras saem aqui.
+    const { data: reservado, error: claimErr } = await this.supabase
       .from("historico_envios")
       .update({ status: "enviando" })
-      .eq("id", historicoId);
+      .eq("id", historicoId)
+      .eq("status", "aguardando")
+      .select("id");
+    if (claimErr) throw claimErr;
+
+    if (!reservado || reservado.length === 0) {
+      return { ok: true, duplicado: true };
+    }
 
     let tentativa = 0;
     let ok = false;
@@ -194,12 +262,8 @@ export class CampaignService {
         ok = r.ok;
         ultimaResposta = r.response;
         ultimoErro = r.error;
-        if (ok) break;
       } catch (e) {
         ultimoErro = (e as Error).message;
-      }
-      if (!ok && tentativa < MAX_TENTATIVAS) {
-        await new Promise((r) => setTimeout(r, 400));
       }
     }
 

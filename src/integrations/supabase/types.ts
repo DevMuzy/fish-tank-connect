@@ -14,12 +14,55 @@ export type Database = {
   }
   public: {
     Tables: {
+      empresas: {
+        Row: {
+          created_at: string
+          delay_envio_ms: number
+          id: string
+          nome: string
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          delay_envio_ms?: number
+          id?: string
+          nome: string
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          delay_envio_ms?: number
+          id?: string
+          nome?: string
+          slug?: string
+        }
+        Relationships: []
+      }
+      usuarios_empresas: {
+        Row: {
+          created_at: string
+          empresa_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          empresa_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          empresa_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       clientes: {
         Row: {
           cpf: string | null
           created_at: string
           created_by: string | null
           data_nascimento: string
+          empresa_id: string
           endereco: string | null
           id: string
           nome: string
@@ -31,6 +74,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           data_nascimento: string
+          empresa_id?: string
           endereco?: string | null
           id?: string
           nome: string
@@ -42,6 +86,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           data_nascimento?: string
+          empresa_id?: string
           endereco?: string | null
           id?: string
           nome?: string
@@ -204,7 +249,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      empresa_do_usuario: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

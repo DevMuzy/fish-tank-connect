@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthDaEmpresa } from "@/integrations/supabase/empresa-middleware";
 import { z } from "zod";
 
 const upsertSchema = z.object({
@@ -14,7 +14,7 @@ const upsertSchema = z.object({
 });
 
 export const salvarIntegracao = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthDaEmpresa])
   .inputValidator((d: unknown) => upsertSchema.parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -56,7 +56,7 @@ export const salvarIntegracao = createServerFn({ method: "POST" })
   });
 
 export const excluirIntegracao = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthDaEmpresa])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase
@@ -68,7 +68,7 @@ export const excluirIntegracao = createServerFn({ method: "POST" })
   });
 
 export const testarConexao = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthDaEmpresa])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: integ, error } = await context.supabase
@@ -90,7 +90,7 @@ export const testarConexao = createServerFn({ method: "POST" })
   });
 
 export const gerarQrCode = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthDaEmpresa])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: integ, error } = await context.supabase
