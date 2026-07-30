@@ -207,13 +207,10 @@ function MensagensPage() {
         const item = r.fila[i];
         let resultado: { ok: boolean; erro?: string };
         try {
+          // Só o id da fila: o servidor lê telefone e texto da própria linha,
+          // para que o número discado nunca dependa do estado desta tela.
           resultado = await enviarContatoFn({
-            data: {
-              historico_id: item.historicoId,
-              telefone: item.telefone,
-              mensagem: mensagem.trim(),
-              imagem_url: imagemUrl,
-            },
+            data: { historico_id: item.historicoId },
           });
         } catch (e) {
           resultado = { ok: false, erro: (e as Error).message };

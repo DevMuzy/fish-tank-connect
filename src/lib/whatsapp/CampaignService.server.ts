@@ -226,12 +226,18 @@ export class CampaignService {
     return Math.max(data?.delay_envio_ms ?? DELAY_ENTRE_ENVIOS_MS, DELAY_ENTRE_ENVIOS_MS);
   }
 
-  async enviarUm(
-    historicoId: string,
-    telefone: string,
-    mensagem: string,
-    imagemUrl?: string | null,
-  ): Promise<EnvioUnicoResultado> {
+  /**
+   * Envia para UM item da fila.
+   *
+   * Recebe só o id da linha — telefone, texto e imagem saem do banco, nunca do
+   * que o navegador mandou. Antes eles vinham por parâmetro, e isso deixava o
+   * número discado à mercê do estado da tela: duas abas abertas, um retry, uma
+   * corrida entre campanhas e o item da fila de um cliente podia ser pareado
+   * com o telefone de outro. Lendo da linha reservada — que a RLS já restringe
+   * à empresa do usuário — não existe caminho para uma campanha discar um
+   * número que não esteja na fila da própria empresa.
+   */
+  async enviarUm(historicoId: string): Promise<EnvioUnicoResultado> {
     // Claim atômico: só segue quem conseguir tirar a linha de "aguardando".
     // Um UPDATE ... WHERE status = 'aguardando' é atômico no Postgres, então
     // duas chamadas concorrentes pro mesmo historicoId (duplo clique, retry do
@@ -241,12 +247,34 @@ export class CampaignService {
       .update({ status: "enviando" })
       .eq("id", historicoId)
       .eq("status", "aguardando")
-      .select("id");
+      .select("id, telefone, mensagem_id");
     if (claimErr) throw claimErr;
 
     if (!reservado || reservado.length === 0) {
       return { ok: true, duplicado: true };
     }
+
+    const linha = reservado[0];
+    const telefone = linha.telefone as string;
+
+    // Texto e imagem vêm da campanha à qual esta linha pertence. Também sob
+    // RLS: campanha de outra empresa não é legível daqui.
+    const { data: campanha, error: campErr } = await this.supabase
+      .from("mensagens")
+      .select("mensagem, imagem_url")
+      .eq("id", linha.mensagem_id as string)
+      .single();
+
+    if (campErr || !campanha) {
+      await this.supabase
+        .from("historico_envios")
+        .update({ status: "falhou", ultimo_erro: "Campanha não encontrada." })
+        .eq("id", historicoId);
+      return { ok: false, erro: "Campanha não encontrada." };
+    }
+
+    const mensagem = campanha.mensagem as string;
+    const imagemUrl = campanha.imagem_url as string | null;
 
     let tentativa = 0;
     let ok = false;

@@ -25,11 +25,12 @@ export const iniciarCampanha = createServerFn({ method: "POST" })
     return { ...resultado, provider: service.providerName };
   });
 
+// Só o id da linha da fila. Telefone e texto NÃO são aceitos do cliente: o
+// servidor lê os dois da linha que ele mesmo reservou, sob RLS. Enquanto eles
+// vinham por parâmetro, quem decidia o número discado era o estado da tela — e
+// um erro ali mandaria mensagem de uma empresa para o contato de outra.
 const enviarContatoSchema = z.object({
   historico_id: z.string().uuid(),
-  telefone: z.string().min(3),
-  mensagem: z.string().min(1),
-  imagem_url: z.string().url().optional().nullable(),
 });
 
 export const enviarContatoCampanha = createServerFn({ method: "POST" })
@@ -38,5 +39,5 @@ export const enviarContatoCampanha = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { CampaignService } = await import("./whatsapp/CampaignService.server");
     const service = await CampaignService.create(context.supabase, context.userId);
-    return service.enviarUm(data.historico_id, data.telefone, data.mensagem, data.imagem_url);
+    return service.enviarUm(data.historico_id);
   });
