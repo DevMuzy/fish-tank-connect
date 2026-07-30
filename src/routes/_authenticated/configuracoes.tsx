@@ -119,6 +119,53 @@ function ConfiguracoesPage() {
 
       {isLoading ? (
         <p className="text-muted-foreground">Carregando...</p>
+      ) : integracoes.length === 0 ? (
+        /* Cliente novo abre esta tela com a lista vazia — cada empresa cadastra
+           a própria instância. Sem este bloco a página ficava só com o cabeçalho
+           e parecia quebrada, escondendo justamente o passo que liga o WhatsApp. */
+        <Card className="shadow-card">
+          <CardContent className="py-12 px-6 flex flex-col items-center text-center gap-5">
+            <div className="h-14 w-14 rounded-2xl bg-muted text-muted-foreground flex items-center justify-center">
+              <Radio className="h-7 w-7" />
+            </div>
+            <div className="space-y-2 max-w-md">
+              <h3 className="font-display text-2xl font-semibold">
+                Conecte o WhatsApp da sua loja
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                As campanhas saem do seu próprio número — o mesmo que seus clientes
+                já têm salvo. Para isso, cadastre a conexão uma única vez.
+              </p>
+            </div>
+            <ol className="text-sm text-left space-y-2.5 text-muted-foreground">
+              <li>
+                <span className="font-medium text-foreground">1.</span> Clique em{" "}
+                <span className="font-medium text-foreground">Nova integração</span> e
+                escolha o provedor <span className="font-medium text-foreground">Evolution API</span>.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">2.</span> Preencha a URL,
+                o token e o nome da instância que enviamos para você.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">3.</span> Salve, clique em{" "}
+                <span className="font-medium text-foreground">QR Code</span> e leia o
+                código com o celular da loja — igual ao WhatsApp Web.
+              </li>
+            </ol>
+            <Button
+              onClick={() => {
+                setEdit(null);
+                setOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4 mr-2" /> Nova integração
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Não tem os dados de acesso? Fale com o suporte.
+            </p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-4">
           {integracoes.map((i) => (
