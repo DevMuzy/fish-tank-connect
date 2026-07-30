@@ -54,7 +54,7 @@ Quatro itens, sem exceção — faltando um, a tabela vaza:
 - **`VITE_EMPRESA_SLUG` e `EMPRESA_SLUG`** têm que existir as duas, com o mesmo
   valor: a primeira é embutida no build (navegador), a segunda fica só no
   servidor (middleware).
-- **Delay entre envios mora em `empresas.delay_envio_ms`**, com piso de 12s no
+- **Delay entre envios mora em `empresas.delay_envio_ms`**, com piso de 15s no
   banco. Não voltar para constante de código: um repo por cliente faria o valor
   divergir.
 - **Datas de nascimento**: `data_nascimento` é coluna DATE. Use

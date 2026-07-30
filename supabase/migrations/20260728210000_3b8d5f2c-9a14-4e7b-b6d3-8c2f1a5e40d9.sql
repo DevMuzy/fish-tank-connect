@@ -33,12 +33,12 @@ CREATE TABLE IF NOT EXISTS public.empresas (
 -- ela divergiria na primeira vez que alguém editasse um repo e esquecesse os
 -- outros. Aqui é um valor só, e todo painel lê o mesmo.
 ALTER TABLE public.empresas
-  ADD COLUMN IF NOT EXISTS delay_envio_ms INTEGER NOT NULL DEFAULT 12000;
+  ADD COLUMN IF NOT EXISTS delay_envio_ms INTEGER NOT NULL DEFAULT 15000;
 
 ALTER TABLE public.empresas
   DROP CONSTRAINT IF EXISTS empresas_delay_minimo;
 ALTER TABLE public.empresas
-  ADD CONSTRAINT empresas_delay_minimo CHECK (delay_envio_ms >= 12000);
+  ADD CONSTRAINT empresas_delay_minimo CHECK (delay_envio_ms >= 15000);
 
 -- O slug é identificador interno e não aparece em tela.
 INSERT INTO public.empresas (slug, nome) VALUES
@@ -47,8 +47,8 @@ INSERT INTO public.empresas (slug, nome) VALUES
   ('vitoria-mar',   'Peixaria Vitória Mar')
 ON CONFLICT (slug) DO NOTHING;
 
--- Reforça o piso de 12s mesmo em linha criada antes desta migration.
-UPDATE public.empresas SET delay_envio_ms = 12000 WHERE delay_envio_ms < 12000;
+-- Reforça o piso de 15s mesmo em linha criada antes desta migration.
+UPDATE public.empresas SET delay_envio_ms = 15000 WHERE delay_envio_ms < 15000;
 
 -- --------------------------------------------------- VÍNCULO USUÁRIO → EMPRESA --
 -- Um login pertence a exatamente uma empresa (PK em user_id). Se alguém

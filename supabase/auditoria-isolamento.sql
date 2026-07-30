@@ -135,13 +135,13 @@ BEGIN
    GROUP BY e.slug
   HAVING count(*) > 1;
 
-  -- 10. Delay abaixo do piso combinado de 12s.
+  -- 10. Delay abaixo do piso combinado de 15s.
   RETURN QUERY
-  SELECT 'AVISO', 'Delay de envio abaixo de 12s',
+  SELECT 'AVISO', 'Delay de envio abaixo de 15s',
          e.slug || ' = ' || e.delay_envio_ms || 'ms',
-         'UPDATE empresas SET delay_envio_ms = 12000 WHERE slug = ''' || e.slug || ''';'
+         'UPDATE empresas SET delay_envio_ms = 15000 WHERE slug = ''' || e.slug || ''';'
     FROM public.empresas e
-   WHERE e.delay_envio_ms < 12000;
+   WHERE e.delay_envio_ms < 15000;
 
   -- 11. Storage: anexo fora da pasta da empresa não é apagável pelo painel.
   RETURN QUERY

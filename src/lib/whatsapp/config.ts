@@ -18,4 +18,4 @@
  * ANTES de chamar o servidor, quando ainda não há valor do banco em mãos.
  * Mantida igual ao default da coluna.
  */
-export const DELAY_ENTRE_ENVIOS_MS = 12_000;
+export const DELAY_ENTRE_ENVIOS_MS = 15_000;

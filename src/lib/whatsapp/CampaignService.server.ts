@@ -219,7 +219,7 @@ export class CampaignService {
   /**
    * Delay entre envios, lido do banco. A RLS de `empresas` só devolve a linha
    * da própria empresa, então não há como pegar o valor de outra.
-   * Cai no default de código apenas se a linha sumir — nunca abaixo de 12s.
+   * Cai no default de código apenas se a linha sumir — nunca abaixo de 15s.
    */
   private async delayDaEmpresa(): Promise<number> {
     const { data } = await this.supabase.from("empresas").select("delay_envio_ms").maybeSingle();

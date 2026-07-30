@@ -42,13 +42,13 @@ CREATE TABLE IF NOT EXISTS public.empresas (
 -- Delay entre um envio e o próximo, em milissegundos. Mora aqui, e não numa
 -- constante de código, porque cada cliente tem seu repositório: como constante
 -- ela divergiria na primeira vez que alguém editasse um repo e esquecesse os
--- outros. O CHECK garante o piso de 12s para todo cliente, atual ou futuro.
+-- outros. O CHECK garante o piso de 15s para todo cliente, atual ou futuro.
 ALTER TABLE public.empresas
-  ADD COLUMN IF NOT EXISTS delay_envio_ms INTEGER NOT NULL DEFAULT 12000;
+  ADD COLUMN IF NOT EXISTS delay_envio_ms INTEGER NOT NULL DEFAULT 15000;
 ALTER TABLE public.empresas DROP CONSTRAINT IF EXISTS empresas_delay_minimo;
 ALTER TABLE public.empresas
-  ADD CONSTRAINT empresas_delay_minimo CHECK (delay_envio_ms >= 12000);
-UPDATE public.empresas SET delay_envio_ms = 12000 WHERE delay_envio_ms < 12000;
+  ADD CONSTRAINT empresas_delay_minimo CHECK (delay_envio_ms >= 15000);
+UPDATE public.empresas SET delay_envio_ms = 15000 WHERE delay_envio_ms < 15000;
 
 -- Um login pertence a exatamente uma empresa (PK em user_id). Quem precisar de
 -- dois painéis ganha dois logins — mais fácil de auditar do que um seletor de
